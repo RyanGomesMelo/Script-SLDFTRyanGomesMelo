@@ -1,6 +1,6 @@
 let _dadosLogin = null;
 let _antigoTitle = document.title;
-document.title += ": Fandangos"
+document.title += ": <3"
 Object.defineProperty(window, 'dadosLogin', {
   get() {
     return _dadosLogin;
