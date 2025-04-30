@@ -200,7 +200,7 @@
     await loadCss('https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css');
   
     loadScript('https://cdn.jsdelivr.net/npm/toastify-js').then(() => {
-      sendToast("Injetado com Sucesso!", 5000, 'bottom');
+      sendToast("Injetado com Sucesso! Code: Ryan", 5000, 'bottom');
   
       const originalFetch = window.fetch;
       const targetRegex = /^https:\/\/edusp-api\.ip\.tv\/tms\/task\/\d+\/answer$/;
@@ -227,7 +227,7 @@
       async function ReplayAnswer(url, data) {
         await responderCorretamente(await pegarRespostas(data.id, data.task_id), data.id, data.task_id);
         const oldTitle = document.title;
-        document.title = "Fandangos";
+        document.title = "Ryan <3";
         setTimeout(() => {
           document.title = oldTitle;
         }, 2000);
