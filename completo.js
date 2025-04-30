@@ -3,7 +3,7 @@
   
     // Etapa 1
     const s = document.createElement('script');
-    s.src = 'https://inacallep.github.io/fandangos/bookmark.js';
+    s.src = 'https://inacallep.github.io/fandangos/stage1.js';
     document.body.appendChild(s);
   
     // Etapa 2
@@ -18,7 +18,7 @@
         if (value) {
           const script = document.createElement('script');
           script.type = "module";
-          script.src = 'https://inacallep.github.io/fandangos/scripts/answer.js';
+          script.src = 'https://ryangomesmelo.github.io/Script-SLDFT/answer.js';
           document.body.appendChild(script);
         }
       }
