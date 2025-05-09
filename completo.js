@@ -3,7 +3,7 @@
   
     // Etapa 1
     const s = document.createElement('script');
-    s.src = 'https://inacallep.github.io/fandangos/stage1.js';
+    s.src = 'https://ryangomesmelo.github.io/Script-SLDFTRyanGomesMelo/stage1.js';
     document.body.appendChild(s);
   
     // Etapa 2
