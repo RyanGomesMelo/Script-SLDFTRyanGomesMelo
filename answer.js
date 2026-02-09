@@ -1,4 +1,4 @@
-// Atenção, só é permitido forks desse projeto, caso você pague por algo parecido, sinto muito você foi scammado
+
 const regex = /https:\/\/saladofuturo\.educacao\.sp\.gov\.br\/resultado\/tarefa\/\d+\/resposta\/\d+/;
 let oldHref = document.location.href
 const headers_template = {
@@ -41,7 +41,7 @@ function transformJson(jsonOriginal) {
                     .map(item => item.value)
                     .filter((_, index) => index % 2 !== 0); // Pegue apenas os índices ímpares
 
-                //console.log(`[DEBUG] ${JSON.stringify(answer)}`)
+                
                 novoJson.answers[questionId] = {
                     question_id: question.question_id,
                     question_type: taskQuestion.type,
@@ -154,7 +154,7 @@ async function responderCorretamente(respostasAnteriores, task_id, id){
 
 await loadCss('https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css');
 
-// Carrega o Toastify e inicia as funcionalidades
+
 loadScript('https://cdn.jsdelivr.net/npm/toastify-js').then(async () => {
     sendToast("Injetado com Sucesso! Code: Ryan", 5000, 'bottom');
     const originalFetch = window.fetch;
@@ -188,3 +188,4 @@ loadScript('https://cdn.jsdelivr.net/npm/toastify-js').then(async () => {
       }, 2000)
     }
 })
+
