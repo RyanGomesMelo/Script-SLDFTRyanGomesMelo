@@ -1,191 +1,149 @@
-
+// --- CONFIGURAÇÕES INICIAIS ---
 const regex = /https:\/\/saladofuturo\.educacao\.sp\.gov\.br\/resultado\/tarefa\/\d+\/resposta\/\d+/;
-let oldHref = document.location.href
 const headers_template = {
-      "x-api-realm": "edusp",
-      "x-api-platform": "webclient",
-      "x-api-key": _dadosLogin.auth_token,
-      "content-type": "application/json"
-  }
-const url_getroom = "https://edusp-api.ip.tv/room/user?list_all=true&with_cards=true"
-const room_data = await fetch(url_getroom, {headers: headers_template}).then(t => t.json())
-var room_name = room_data["rooms"][0]["name"]
-var nick_name = _dadosLogin.nick
-console.log(_dadosLogin.auth_token, nick_name, room_name)
+    "x-api-realm": "edusp",
+    "x-api-platform": "webclient",
+    "x-api-key": _dadosLogin.auth_token,
+    "content-type": "application/json"
+};
+
+// --- FUNÇÕES DE UTILIDADE E TRATAMENTO ---
+
 function removeHtmlTags(htmlString) {
     const div = document.createElement('div');
     div.innerHTML = htmlString;
     return div.textContent || div.innerText || '';
 }
-function transformJson(jsonOriginal) {
-        let novoJson = {
-            accessed_on: jsonOriginal.accessed_on,
-            executed_on: jsonOriginal.executed_on,
-            answers: {}
-        };
 
-        for (let questionId in jsonOriginal.answers) {
-            let question = jsonOriginal.answers[questionId];
-            let taskQuestion = jsonOriginal.task.questions.find(q => q.id === parseInt(questionId));
-
-            if (taskQuestion.type === "order-sentences") {
-                let answer = taskQuestion.options.sentences.map(sentence => sentence.value);
-                novoJson.answers[questionId] = {
-                    question_id: question.question_id,
-                    question_type: taskQuestion.type,
-                    answer: answer
-                };
-            } else if (taskQuestion.type === "fill-words") {
-                let pre_answer = taskQuestion.options;
-                let answer = pre_answer.phrase
-                    .map(item => item.value)
-                    .filter((_, index) => index % 2 !== 0); // Pegue apenas os índices ímpares
-
-                
-                novoJson.answers[questionId] = {
-                    question_id: question.question_id,
-                    question_type: taskQuestion.type,
-                    answer: answer
-                };
-            } else if (taskQuestion.type === "text_ai") {
-                let answer = taskQuestion.comment.replace(/<\/?p>/g, '');
-                answer = removeHtmlTags(answer)
-                novoJson.answers[questionId] = {
-                    question_id: question.question_id,
-                    question_type: taskQuestion.type,
-                    answer: {
-                        "0": answer
-                    }
-                };
-            } else if (taskQuestion.type === "fill-letters") {
-                let answer = taskQuestion.options.answer;
-                novoJson.answers[questionId] = {
-                    question_id: question.question_id,
-                    question_type: taskQuestion.type,
-                    answer: answer
-                };
-            } else if (taskQuestion.type === "cloud") {
-                let answer = taskQuestion.options.ids;
-                novoJson.answers[questionId] = {
-                    question_id: question.question_id,
-                    question_type: taskQuestion.type,
-                    answer: answer
-                };1
-            } else {
-                let answer = Object.fromEntries(
-                    Object.keys(taskQuestion.options).map(optionId => [optionId, taskQuestion.options[optionId].answer])
-                );
-                novoJson.answers[questionId] = {
-                    question_id: question.question_id,
-                    question_type: taskQuestion.type,
-                    answer: answer
-                };
-            }
-        }
-        return novoJson;
-    }
-function sendToast(text, duration = 5000, gravity = 'bottom', imageUrl = null, fontSize = '16px', fontFamily = 'Arial, sans-serif', color = '#ffffff') {
-    const toast = Toastify({
-        text: text,
-        duration: duration,
-        gravity: gravity,
-        position: "center",
-        stopOnFocus: true,
-        style: {
-            background: "#000000",
-            fontSize: fontSize,
-            fontFamily: fontFamily,
-            color: color,
-            padding: '10px 20px',
-            borderRadius: '5px',
-            display: 'flex',
-            alignItems: 'center'
-        }
-    });
-
-    if (imageUrl) {
-        const img = document.createElement('img');
-        img.src = imageUrl;
-        img.style.width = '20px';
-        img.style.height = '20px';
-        img.style.marginRight = '10px';
-        toast.toastElement.prepend(img);
-    }
-
-    toast.showToast();
+// 🔥 NOVO: função que muda o título para confirmar a ação
+function FixtureTitle() {
+    const old = document.title;
+    document.title = "Ryan <3";
+    setTimeout(() => document.title = old, 1500);
 }
-function loadScript(url) {
-    return new Promise((resolve, reject) => {
+
+// 🔥 NOVO: envia uma resposta vazia para forçar o servidor a devolver o gabarito no response
+async function forcaGabarito(taskId, answerId) {
+    const dummy = {
+        accessed_on: new Date().toISOString(),
+        executed_on: new Date().toISOString(),
+        answers: {}
+    };
+    await fetch(`https://edusp-api.ip.tv/tms/task/${answerId}/answer/${taskId}`, {
+        method: 'PUT',
+        headers: headers_template,
+        body: JSON.stringify(dummy)
+    });
+}
+
+function transformJson(jsonOriginal) {
+    let novoJson = {
+        accessed_on: jsonOriginal.accessed_on,
+        executed_on: jsonOriginal.executed_on,
+        answers: {}
+    };
+
+    for (let questionId in jsonOriginal.answers) {
+        let question = jsonOriginal.answers[questionId];
+        let taskQuestion = jsonOriginal.task.questions.find(q => q.id === parseInt(questionId));
+
+        if (!taskQuestion) continue;
+
+        if (taskQuestion.type === "order-sentences") {
+            let answer = taskQuestion.options.sentences.map(sentence => sentence.value);
+            novoJson.answers[questionId] = { question_id: question.question_id, question_type: taskQuestion.type, answer: answer };
+        } else if (taskQuestion.type === "fill-words") {
+            let answer = taskQuestion.options.phrase.map(item => item.value).filter((_, index) => index % 2 !== 0);
+            novoJson.answers[questionId] = { question_id: question.question_id, question_type: taskQuestion.type, answer: answer };
+        } else if (taskQuestion.type === "text_ai") {
+            let answer = removeHtmlTags(taskQuestion.comment.replace(/<\/?p>/g, ''));
+            novoJson.answers[questionId] = { question_id: question.question_id, question_type: taskQuestion.type, answer: { "0": answer } };
+        } else if (taskQuestion.type === "fill-letters") {
+            novoJson.answers[questionId] = { question_id: question.question_id, question_type: taskQuestion.type, answer: taskQuestion.options.answer };
+        } else if (taskQuestion.type === "cloud") {
+            novoJson.answers[questionId] = { question_id: question.question_id, question_type: taskQuestion.type, answer: taskQuestion.options.ids };
+        } else {
+            let answer = Object.fromEntries(Object.keys(taskQuestion.options).map(optionId => [optionId, taskQuestion.options[optionId].answer]));
+            novoJson.answers[questionId] = { question_id: question.question_id, question_type: taskQuestion.type, answer: answer };
+        }
+    }
+    return novoJson;
+}
+
+async function responderCorretamente(respostasAnteriores, task_id, id) {
+    const put_answers_url = `https://edusp-api.ip.tv/tms/task/${id}/answer/${task_id}`;
+    const novasRespostas = transformJson(respostasAnteriores);
+    await fetch(put_answers_url, {
+        method: "PUT",
+        headers: headers_template,
+        body: JSON.stringify(novasRespostas)
+    });
+}
+
+// --- CARREGAMENTO E INTERCEPTAÇÃO ---
+
+async function loadScript(url) {
+    return new Promise((resolve) => {
         const script = document.createElement('script');
         script.src = url;
-        script.type = 'text/javascript';
         script.onload = resolve;
-        script.onerror = reject;
         document.head.appendChild(script);
     });
 }
+
 async function loadCss(url) {
-    return new Promise((resolve) => {
-        const link = document.createElement('link');
-        link.rel = 'stylesheet';
-        link.type = 'text/css';
-        link.href = url;
-        link.onload = () => resolve();
-        document.head.appendChild(link);
-    });
-}
-async function pegarRespostas(task_id, id){
-	const get_anwsers_url = `https://edusp-api.ip.tv/tms/task/${id}/answer/${task_id}?with_task=true&with_genre=true&with_questions=true&with_assessed_skills=true`;
-	const respostas = await fetch(get_anwsers_url, {
-						method: "GET",
-						headers: headers_template
-					}).then(r => r.json())
-	return respostas;
-}
-async function responderCorretamente(respostasAnteriores, task_id, id){
-	const put_answers_url = `https://edusp-api.ip.tv/tms/task/${id}/answer/${task_id}`
-	const novasRespostas = transformJson(respostasAnteriores)
-	await fetch(put_answers_url, {
-		method: "PUT",
-		headers: headers_template,
-		body: JSON.stringify(novasRespostas)
-	})
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = url;
+    document.head.appendChild(link);
 }
 
-await loadCss('https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css');
+// Inicialização principal
+(async () => {
+    await loadCss('https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css');
+    await loadScript('https://cdn.jsdelivr.net/npm/toastify-js');
 
+    Toastify({
+        text: "Injetado com Sucesso! Code: Ryan",
+        duration: 5000,
+        gravity: "bottom",
+        position: "center",
+        style: { background: "#000000" }
+    }).showToast();
 
-loadScript('https://cdn.jsdelivr.net/npm/toastify-js').then(async () => {
-    sendToast("Injetado com Sucesso! Code: Ryan", 5000, 'bottom');
     const originalFetch = window.fetch;
-    
     const targetRegex = /^https:\/\/edusp-api\.ip\.tv\/tms\/task\/\d+\/answer$/;
-    window.fetch = async function(input, init) {
-      let url = typeof input === 'string' ? input : input.url;
-    
-      const response = await originalFetch.apply(this, arguments);
-    
-      if (targetRegex.test(url)) {
-        try {
-          const clonedResponse = response.clone();
-          const data = await clonedResponse.json();
-          if(data.status != "draft"){
-          	ReplayAnswer(url, data);
-          }
-        } catch (err) {
-          console.error('Erro ao processar a resposta JSON:', err);
-        }
-      }
-    
-      return response;
-    };
-    async function ReplayAnswer(url, data) {
-      await responderCorretamente(await pegarRespostas(data.id, data.task_id), data.id, data.task_id)
-      const oldTitle = document.title
-      document.title = "Ryan <3"
-      setTimeout(() => {
-      	document.title = oldTitle
-      }, 2000)
-    }
-})
+    // 🔥 NOVO: Regex para interceptar o PUT que agora contém o gabarito no response
+    const targetPutRegex = /^https:\/\/edusp-api\.ip\.tv\/tms\/task\/\d+\/answer\/\d+$/;
 
+    window.fetch = async function(input, init) {
+        let url = typeof input === 'string' ? input : input.url;
+        const response = await originalFetch.apply(this, arguments);
+
+        // 🔥 NOVO: Intercepta o PUT. Se o corpo da resposta trouxer o gabarito (data.answers), ele re-envia corrigido.
+        if (targetPutRegex.test(url) && init && init.method === 'PUT') {
+            try {
+                const cloned = response.clone();
+                const data = await cloned.json();
+                if (data.answers && data.task) {
+                    await responderCorretamente(data, data.task_id, data.id);
+                    FixtureTitle();
+                }
+            } catch (e) { }
+        }
+
+        // Trigger inicial: Quando você entra na tarefa
+        if (targetRegex.test(url)) {
+            try {
+                const clonedResponse = response.clone();
+                const data = await clonedResponse.json();
+                // Se for um rascunho, "força" um envio para o servidor liberar o gabarito no próximo passo
+                if (data.status === "draft") {
+                    await forcaGabarito(data.id, data.task_id);
+                }
+            } catch (err) { }
+        }
+
+        return response;
+    };
+})();
