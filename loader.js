@@ -1,9 +1,10 @@
 (function () {
     const _fetchOriginal = window.fetch.bind(window);
-    let tentativaEmAndamento = false;
+    const _jsonParse = JSON.parse.bind(JSON);
+    let respostasCorretas = {};
 
     // ============================================================
-    //  UTILITÁRIOS
+    //  TOAST
     // ============================================================
 
     function mostrarToast(texto, cor) {
@@ -14,7 +15,7 @@
             gravity: "bottom",
             position: "center",
             style: {
-                background: cor || "#000",
+                background: cor || "#111",
                 fontSize: '15px',
                 fontFamily: 'Arial, sans-serif',
                 color: '#fff',
@@ -24,8 +25,11 @@
         }).showToast();
     }
 
-    // Extrai a resposta correta do itemData retornado pelo servidor após tentativa
-    function extrairResposta(itemData) {
+    // ============================================================
+    //  EXTRAI RESPOSTAS CORRETAS DO itemData
+    // ============================================================
+
+    function extrairRespostas(itemData) {
         const widgets = itemData.question.widgets;
         const resultado = {};
 
@@ -33,11 +37,10 @@
             if (widget.type === 'radio') {
                 const choices = widget.options.choices;
                 const idx = choices.findIndex(c => c.correct === true);
-                if (idx !== -1) resultado[widgetId] = { type: 'radio', index: idx, content: choices[idx].content };
+                if (idx !== -1) resultado[widgetId] = { type: 'radio', index: idx };
 
             } else if (widget.type === 'numeric-input' || widget.type === 'input-number') {
-                const answers = widget.options.answers;
-                const correta = answers?.find(a => a.status === 'correct');
+                const correta = widget.options.answers?.find(a => a.status === 'correct');
                 if (correta) resultado[widgetId] = { type: 'numeric-input', value: String(correta.value) };
 
             } else if (widget.type === 'expression') {
@@ -48,145 +51,121 @@
         return resultado;
     }
 
-    // Preenche o DOM com a resposta correta e confirma
-    function preencherDOMComResposta(respostas) {
-        for (const [widgetId, resp] of Object.entries(respostas)) {
-            if (resp.type === 'radio') {
-                const inputs = document.querySelectorAll('input[type="radio"]');
-                if (inputs[resp.index]) {
-                    inputs[resp.index].click();
-                    console.log("[Ryan] Radio clicado no índice:", resp.index);
-                }
-            } else {
-                // numeric-input, expression, input-number
-                const inputs = document.querySelectorAll('input[type="text"], input[type="number"]');
-                inputs.forEach(input => {
-                    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-                    setter.call(input, resp.value);
-                    input.dispatchEvent(new Event('input', { bubbles: true }));
-                    input.dispatchEvent(new Event('change', { bubbles: true }));
-                    console.log("[Ryan] Input preenchido com:", resp.value);
-                });
+    // ============================================================
+    //  MODIFICA itemData ANTES DO REACT RENDERIZAR
+    //  Para radio: move a correta pro índice 0 e marca claramente
+    //  Para numeric-input: já temos o valor, preenchemos via DOM
+    // ============================================================
+
+    function modificarItemData(itemData) {
+        if (Object.keys(respostasCorretas).length === 0) return itemData;
+
+        const widgets = itemData.question.widgets;
+        for (const [widgetId, widget] of Object.entries(widgets)) {
+            const resp = respostasCorretas[widgetId];
+            if (!resp) continue;
+
+            if (widget.type === 'radio' && resp.type === 'radio') {
+                const choices = widget.options.choices;
+                const correta = choices[resp.index];
+                const erradas = choices.filter((_, i) => i !== resp.index);
+                // Coloca a correta primeiro
+                widget.options.choices = [
+                    { ...correta, correct: true },
+                    ...erradas.map(c => ({ ...c, correct: false }))
+                ];
+                console.log("[Ryan] Radio: correta movida para índice 0 —", correta?.content);
             }
         }
-
-        // Clica em verificar após preencher
-        setTimeout(() => {
-            const botoes = Array.from(document.querySelectorAll('button'));
-            const verificar = botoes.find(b => {
-                const t = b.textContent.trim().toLowerCase();
-                return t.includes('verificar') || t.includes('check') || t.includes('confirmar');
-            });
-            if (verificar) {
-                verificar.click();
-                console.log("[Ryan] Botão verificar clicado.");
-                mostrarToast("✅ Respondido com sucesso!", "#1a7a4a");
-            }
-        }, 600);
+        return itemData;
     }
 
     // ============================================================
-    //  INTERCEPTAÇÃO DO FETCH
+    //  INTERCEPTA JSON.parse (estratégia do script antigo)
+    //  Age no momento em que o React processa a resposta da API
+    // ============================================================
+
+    JSON.parse = function (json, reviver) {
+        let parsed = _jsonParse(json, reviver);
+        if (!parsed || typeof parsed !== 'object') return parsed;
+
+        try {
+            // Questão nova carregando — itemDataAnswerless (sem resposta)
+            // Se já temos respostas salvas, injetamos nela
+            if (parsed?.data?.assessmentItemByProblemNumber?.item?.itemDataAnswerless) {
+                const item = parsed.data.assessmentItemByProblemNumber.item;
+                const itemData = _jsonParse(item.itemDataAnswerless);
+                const modificado = modificarItemData(itemData);
+                item.itemDataAnswerless = JSON.stringify(modificado);
+                console.log("[Ryan] itemDataAnswerless interceptado e modificado!");
+            }
+        } catch (e) {}
+
+        try {
+            // itemData retornado após tentativa — tem correct: true
+            if (parsed?.data?.attemptProblem?.result?.itemData) {
+                const itemDataStr = parsed.data.attemptProblem.result.itemData;
+                const itemData = _jsonParse(itemDataStr);
+                const novas = extrairRespostas(itemData);
+                if (Object.keys(novas).length > 0) {
+                    respostasCorretas = novas;
+                    console.log("[Ryan] Respostas capturadas do attemptProblem:", respostasCorretas);
+                    mostrarToast("✅ Gabarito capturado! Próxima questão virá com resposta.", "#1a7a4a");
+                }
+            }
+        } catch (e) {}
+
+        return parsed;
+    };
+
+    // ============================================================
+    //  INTERCEPTA FETCH — após cada tentativa, salva o gabarito
+    //  e para inputs numéricos preenche o campo automaticamente
     // ============================================================
 
     window.fetch = async function (input, init) {
         const url = typeof input === 'string' ? input : input.url;
         const response = await _fetchOriginal.apply(this, arguments);
 
-        // Após tentativa falsa → servidor retorna itemData com respostas
         if (url.includes('attemptProblem')) {
             try {
                 const data = await response.clone().json();
                 const itemDataStr = data?.data?.attemptProblem?.result?.itemData;
-                if (itemDataStr && tentativaEmAndamento) {
-                    const itemData = JSON.parse(itemDataStr);
-                    const respostas = extrairResposta(itemData);
-                    console.log("[Ryan] Respostas extraídas:", respostas);
-                    if (Object.keys(respostas).length > 0) {
-                        mostrarToast("✅ Resposta encontrada! Preenchendo...", "#1a7a4a");
-                        setTimeout(() => {
-                            tentativaEmAndamento = false;
-                            preencherDOMComResposta(respostas);
-                        }, 800);
-                    } else {
-                        tentativaEmAndamento = false;
+                if (itemDataStr) {
+                    const itemData = _jsonParse(itemDataStr);
+                    const novas = extrairRespostas(itemData);
+                    if (Object.keys(novas).length > 0) {
+                        respostasCorretas = novas;
+                        // Para numeric-input, preenche o campo da PRÓXIMA questão quando aparecer
+                        for (const [, resp] of Object.entries(respostasCorretas)) {
+                            if (resp.type === 'numeric-input' || resp.type === 'expression') {
+                                // Aguarda a próxima questão renderizar e preenche
+                                const tentarPreencher = (tentativas) => {
+                                    const inputs = Array.from(document.querySelectorAll('input[type="text"], input[type="number"]'))
+                                        .filter(i => i.offsetParent !== null);
+                                    if (inputs.length > 0) {
+                                        inputs.forEach(input => {
+                                            const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                                            setter.call(input, resp.value);
+                                            input.dispatchEvent(new Event('input', { bubbles: true }));
+                                            input.dispatchEvent(new Event('change', { bubbles: true }));
+                                        });
+                                        console.log("[Ryan] Input numérico preenchido:", resp.value);
+                                        mostrarToast("✅ Campo preenchido: " + resp.value, "#1a7a4a");
+                                    } else if (tentativas > 0) {
+                                        setTimeout(() => tentarPreencher(tentativas - 1), 500);
+                                    }
+                                };
+                                setTimeout(() => tentarPreencher(10), 1000);
+                            }
+                        }
                     }
                 }
-            } catch (e) {
-                console.error("[Ryan] Erro em attemptProblem:", e);
-                tentativaEmAndamento = false;
-            }
-        }
-
-        // Nova questão carregada → faz tentativa falsa
-        if (url.includes('getAssessmentItemByProblemNumber') && !tentativaEmAndamento) {
-            try {
-                const data = await response.clone().json();
-                const item = data?.data?.assessmentItemByProblemNumber?.item;
-                if (item) {
-                    console.log("[Ryan] Questão carregada:", item.id, "Fazendo tentativa falsa...");
-                    setTimeout(() => fazerTentativaFalsaViaDom(item), 1200);
-                }
-            } catch (e) { console.error("[Ryan] Erro em getAssessmentItemByProblemNumber:", e); }
+            } catch (e) {}
         }
 
         return response;
     };
-
-    // ============================================================
-    //  TENTATIVA FALSA VIA DOM (mais confiável que Apollo direto)
-    // ============================================================
-
-    function fazerTentativaFalsaViaDom(item) {
-        if (tentativaEmAndamento) return;
-        tentativaEmAndamento = true;
-
-        try {
-            const itemData = JSON.parse(item.itemDataAnswerless);
-            const widgets = itemData.question.widgets;
-
-            // Preenche com valor inválido/falso só para disparar a requisição
-            for (const [widgetId, widget] of Object.entries(widgets)) {
-                if (widget.type === 'radio') {
-                    // Clica na última opção (provavelmente errada)
-                    const inputs = document.querySelectorAll('input[type="radio"]');
-                    const ultimo = inputs[inputs.length - 1];
-                    if (ultimo) ultimo.click();
-
-                } else {
-                    // Preenche com "0" nos inputs de texto
-                    const inputs = document.querySelectorAll('input[type="text"], input[type="number"]');
-                    inputs.forEach(input => {
-                        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-                        setter.call(input, "0");
-                        input.dispatchEvent(new Event('input', { bubbles: true }));
-                        input.dispatchEvent(new Event('change', { bubbles: true }));
-                    });
-                }
-            }
-
-            // Clica em verificar para enviar a tentativa falsa
-            setTimeout(() => {
-                const botoes = Array.from(document.querySelectorAll('button'));
-                const verificar = botoes.find(b => {
-                    const t = b.textContent.trim().toLowerCase();
-                    return t.includes('verificar') || t.includes('check') || t.includes('confirmar');
-                });
-                if (verificar) {
-                    verificar.click();
-                    console.log("[Ryan] Tentativa falsa enviada via DOM.");
-                    mostrarToast("🔍 Buscando resposta...", "#555");
-                } else {
-                    console.warn("[Ryan] Botão verificar não encontrado.");
-                    tentativaEmAndamento = false;
-                }
-            }, 400);
-
-        } catch (e) {
-            console.error("[Ryan] Erro na tentativa falsa:", e);
-            tentativaEmAndamento = false;
-        }
-    }
 
     // ============================================================
     //  CARREGA TOASTIFY
@@ -202,7 +181,7 @@
         s.src = 'https://cdn.jsdelivr.net/npm/toastify-js';
         s.onload = () => {
             mostrarToast("🚀 Ryan Script ativado!", "#111");
-            console.log("[Ryan] Script pronto.");
+            console.log("[Ryan] Pronto! Responda uma questão qualquer — a partir da 2ª virá com o gabarito marcado.");
         };
         document.head.appendChild(s);
     }
